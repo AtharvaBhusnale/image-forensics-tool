@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Digital Image Forensics Tool</title>
+        <link
+            href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+            rel="stylesheet"
+        />
+        <style>
+            body {
+                background-color: #f8f9fa;
+            }
+            .container {
+                max-width: 960px;
+            }
+            .header {
+                background-color: #343a40;
+                color: white;
+                padding: 2rem;
+                border-radius: 0.5rem;
+                margin-bottom: 2rem;
+            }
+            .upload-box {
+                border: 2px dashed #0d6efd;
+                border-radius: 0.5rem;
+                padding: 2rem;
+                text-align: center;
+                background-color: #ffffff;
+            }
+            #results-area {
+                display: none;
+                margin-top: 2rem;
+            }
+            #ela-image {
+                max-width: 100%;
+                border: 1px solid #dee2e6;
+                border-radius: 0.25rem;
+            }
+            .spinner-border {
+                width: 3rem;
+                height: 3rem;
+            }
+            .table-responsive {
+                max-height: 400px;
+                overflow-y: auto;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container my-5">
+            <div class="header text-center">
+                <h1 class="display-5">🔒 Digital Image Forensics Tool</h1>
+                <p class="lead">
+                    Upload an image (JPG, PNG) to analyze its metadata,
+                    integrity, and potential tampering.
+                </p>
+            </div>
+
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <form id="upload-form" class="upload-box">
+                        <div class="mb-3">
+                            <label for="image-upload" class="form-label fs-5"
+                                >Drag & Drop or Click to Upload</label
+                            >
+                            <input
+                                class="form-control"
+                                type="file"
+                                id="image-upload"
+                                accept="image/jpeg, image/png"
+                                required
+                            />
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <span id="btn-text">Analyze Image</span>
+                            <span
+                                id="loading-spinner"
+                                class="spinner-border spinner-border-sm"
+                                role="status"
+                                aria-hidden="true"
+                                style="display: none"
+                            ></span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div
+                id="error-alert"
+                class="alert alert-danger mt-3"
+                role="alert"
+                style="display: none"
+            ></div>
+
+            <div id="results-area" class="mt-4">
+                <div
+                    class="d-flex justify-content-between align-items-center mb-3"
+                >
+                    <h2 class="mb-0">Analysis Report</h2>
+                    <a
+                        id="download-report"
+                        href="#"
+                        class="btn btn-success"
+                        download
+                        >Download Full PDF Report</a
+                    >
+                </div>
+
+                <div class="row g-4">
+                    <div class="col-lg-6">
+                        <div class="card">
+                            <div class="card-header">
+                                Error Level Analysis (ELA)
+                            </div>
+                            <div class="card-body text-center">
+                                <p class="card-text text-muted small">
+                                    Brighter areas suggest a different
+                                    compression level, hinting at modification.
+                                </p>
+                                <img id="ela-image" src="" alt="ELA Result" />
+                            </div>
+                        </div>
+
+                        <div
+                            class="card mt-4"
+                            id="thumbnail-card"
+                            style="display: none"
+                        >
+                            <div class="card-header">
+                                🕵️ Embedded Thumbnail Analysis
+                            </div>
+                            <div class="card-body">
+                                <p
+                                    class="card-text text-muted small"
+                                    id="thumbnail-message"
+                                ></p>
+                                <img
+                                    id="thumbnail-image"
+                                    src=""
+                                    style="
+                                        max-width: 100%;
+                                        border: 1px solid #dee2e6;
+                                    "
+                                />
+                                <div
+                                    class="alert alert-warning mt-2"
+                                    role="alert"
+                                    id="thumbnail-alert"
+                                    style="display: none"
+                                >
+                                    <strong>Potential Modification!</strong> If
+                                    this thumbnail looks different from the main
+                                    image (e.g., different cropping, objects, or
+                                    content), the original image was likely
+                                    edited.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card mt-4">
+                            <div class="card-header">Image Hashes</div>
+                            <div class="card-body">
+                                <table class="table table-sm table-striped">
+                                    <tbody id="hash-table-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-6">
+                        <div class="card">
+                            <div class="card-header">EXIF Metadata</div>
+                            <div class="card-body table-responsive">
+                                <table class="table table-sm table-striped">
+                                    <tbody id="metadata-table-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const API_URL = "http://127.0.0.1:5000"; // Your Flask backend URL
+
+            const form = document.getElementById("upload-form");
+            const fileInput = document.getElementById("image-upload");
+            const resultsArea = document.getElementById("results-area");
+            const errorAlert = document.getElementById("error-alert");
+
+            const btnText = document.getElementById("btn-text");
+            const loadingSpinner = document.getElementById("loading-spinner");
+
+            const elaImage = document.getElementById("ela-image");
+            const metadataTableBody = document.getElementById(
+                "metadata-table-body",
+            );
+            const hashTableBody = document.getElementById("hash-table-body");
+            const downloadReportLink =
+                document.getElementById("download-report");
+
+            // NEW: Thumbnail elements
+            const thumbnailCard = document.getElementById("thumbnail-card");
+            const thumbnailMessage =
+                document.getElementById("thumbnail-message");
+            const thumbnailImage = document.getElementById("thumbnail-image");
+            const thumbnailAlert = document.getElementById("thumbnail-alert");
+
+            form.addEventListener("submit", async (e) => {
+                e.preventDefault();
+
+                if (!fileInput.files.length) {
+                    showError("Please select a file first.");
+                    return;
+                }
+
+                const file = fileInput.files[0];
+                const formData = new FormData();
+                formData.append("image", file);
+
+                // --- Show loading state ---
+                setLoading(true);
+                resultsArea.style.display = "none";
+                errorAlert.style.display = "none";
+
+                try {
+                    const response = await fetch(`${API_URL}/analyze`, {
+                        method: "POST",
+                        body: formData,
+                    });
+
+                    if (!response.ok) {
+                        const errData = await response.json();
+                        throw new Error(
+                            errData.error ||
+                                `HTTP error! status: ${response.status}`,
+                        );
+                    }
+
+                    const data = await response.json();
+                    displayResults(data);
+                } catch (error) {
+                    console.error("Analysis Error:", error);
+                    showError(error.message);
+                } finally {
+                    setLoading(false);
+                }
+            });
+
+            function displayResults(data) {
+                // 1. Populate Metadata
+                metadataTableBody.innerHTML = ""; // Clear old data
+                if (data.metadata && Object.keys(data.metadata).length > 0) {
+                    for (const [key, value] of Object.entries(data.metadata)) {
+                        const row = `<tr>
+                                    <td><strong>${escapeHTML(key)}</strong></td>
+                                    <td>${escapeHTML(value)}</td>
+                                 </tr>`;
+                        metadataTableBody.innerHTML += row;
+                    }
+                } else {
+                    metadataTableBody.innerHTML =
+                        '<tr><td colspan="2">No metadata found.</td></tr>';
+                }
+
+                // 2. Populate Hashes
+                hashTableBody.innerHTML = ""; // Clear old data
+                if (data.hashes) {
+                    for (const [key, value] of Object.entries(data.hashes)) {
+                        const row = `<tr>
+                                    <td><strong>${escapeHTML(key)}</strong></td>
+                                    <td style="word-break: break-all;">${escapeHTML(value)}</td>
+                                 </tr>`;
+                        hashTableBody.innerHTML += row;
+                    }
+                }
+
+                // 3. Display ELA Image
+                if (data.ela_b64) {
+                    elaImage.src = `data:image/jpeg;base64,${data.ela_b64}`;
+                    elaImage.style.display = "block";
+                } else {
+                    elaImage.style.display = "none";
+                }
+
+                // 4. NEW: Display Thumbnail Analysis
+                if (data.thumbnail_analysis) {
+                    const ta = data.thumbnail_analysis;
+                    thumbnailMessage.textContent = ta.message;
+
+                    if (ta.status === "found") {
+                        thumbnailImage.src = `data:image/png;base64,${ta.thumbnail_b64}`;
+                        thumbnailImage.style.display = "block";
+                        thumbnailAlert.style.display = "block";
+                    } else {
+                        thumbnailImage.style.display = "none";
+                        thumbnailAlert.style.display = "none";
+                    } // <-- TYPO REMOVED HERE
+                    thumbnailCard.style.display = "block";
+                } else {
+                    thumbnailCard.style.display = "none";
+                }
+
+                // 5. Set Download Link
+                downloadReportLink.href = `${API_URL}${data.report_url}`;
+
+                // 6. Show results
+                resultsArea.style.display = "block";
+            }
+
+            function setLoading(isLoading) {
+                if (isLoading) {
+                    btnText.style.display = "none";
+                    loadingSpinner.style.display = "inline-block";
+                    form.querySelector("button").disabled = true;
+                } else {
+                    btnText.style.display = "inline-block";
+                    loadingSpinner.style.display = "none";
+                    form.querySelector("button").disabled = false;
+                }
+            }
+
+            function showError(message) {
+                errorAlert.textContent = `Error: ${message}`;
+                errorAlert.style.display = "block";
+            }
+
+            // Helper to prevent XSS
+            function escapeHTML(str) {
+                return str
+                    .toString()
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
+            }
+        </script>
+    </body>
+</html>

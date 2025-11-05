@@ -1,0 +1,6 @@
+Flask
+Flask-Cors
+Pillow
+piexif
+reportlab
+werkzeug
